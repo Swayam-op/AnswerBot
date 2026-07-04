@@ -80,12 +80,21 @@ forwards it to the dev server; on Vercel it's the same-origin serverless functio
    Vercel sees two apps and asks for a multi-service config.
 4. Framework preset should auto-detect as **Vite**. Leave build settings default.
 5. Add **Environment Variables** (Settings → Environment Variables):
-   - `GEMINI_API_KEY` = your key
-   - `MODEL` = `gemini-2.5-flash`
+   - `GEMINI_API_KEY` = your Gemini key   *(required)*
+   - `MODEL` = `gemini-2.5-flash`          *(required)*
+   - `GITHUB_TOKEN` = your GitHub Models token   *(optional — enables fallback)*
+   - `FALLBACK_MODEL` = `openai/gpt-4o-mini`     *(optional, this is the default)*
 6. **Deploy.** Live at `https://<project>.vercel.app` — camera works because
    Vercel serves it over HTTPS.
 
 > No `VITE_API_URL` needed: frontend and API share the same origin on Vercel.
+
+## Provider fallback chain
+`/api/solve` tries **Gemini** first. If Gemini returns a **rate-limit (429)** and a
+`GITHUB_TOKEN` is set, it automatically retries with **GitHub Models gpt-4o-mini**.
+The response includes `provider` (`"gemini"` or `"github"`) and `fallback: true`
+when the fallback was used. If both fail, you get one clear error. Without a
+`GITHUB_TOKEN`, only Gemini is used.
 
 ## How it works
 1. Start Exam → opens the rear camera.
