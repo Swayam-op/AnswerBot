@@ -6,8 +6,8 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import solveHandler from "../api/solve.js";
-import healthHandler from "../api/health.js";
+import solveHandler from "../frontend/api/solve.js";
+import healthHandler from "../frontend/api/health.js";
 
 const PORT = process.env.PORT || 3001;
 

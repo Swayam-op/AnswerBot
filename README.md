@@ -59,12 +59,14 @@ Notes:
 
 ## Project layout
 ```
-/api            → serverless functions (run on Vercel; reused by local dev)
-  solve.js      → POST /api/solve  (Gemini vision)
-  health.js     → GET  /api/health
-/backend        → local dev server that wraps the /api handlers (npm start)
-/frontend       → Vite app (camera UI)
-vercel.json     → Vercel build config (builds frontend, serves /api functions)
+/frontend               → the DEPLOYED app (this is Vercel's Root Directory)
+  index.html, src/      → Vite camera UI
+  api/                  → serverless functions (run on Vercel)
+    solve.js            → POST /api/solve  (Gemini vision)
+    health.js           → GET  /api/health
+  vercel.json           → functions config (maxDuration)
+/backend                → LOCAL DEV ONLY: wraps the api/ handlers (npm start).
+                          Not deployed. Vercel never sees it (outside Root Dir).
 ```
 The frontend calls `/api/solve` in both environments: locally the Vite proxy
 forwards it to the dev server; on Vercel it's the same-origin serverless function.
@@ -72,13 +74,16 @@ forwards it to the dev server; on Vercel it's the same-origin serverless functio
 ## Deploying to Vercel (one project)
 1. Push this repo to GitHub (see below).
 2. In Vercel → **Add New → Project → Import** your GitHub repo.
-3. Vercel reads `vercel.json` automatically (build = frontend, functions = /api).
-   Leave the framework/preset as detected.
-4. Add **Environment Variables** (Project → Settings → Environment Variables):
+3. **IMPORTANT — set Root Directory to `frontend`** (click *Edit* next to Root
+   Directory and choose `frontend`). This makes Vercel deploy only the Vite app
+   + its `api/` functions, and ignore the `backend/` dev folder. Without this,
+   Vercel sees two apps and asks for a multi-service config.
+4. Framework preset should auto-detect as **Vite**. Leave build settings default.
+5. Add **Environment Variables** (Settings → Environment Variables):
    - `GEMINI_API_KEY` = your key
    - `MODEL` = `gemini-2.5-flash`
-5. **Deploy.** Your app is live at `https://<project>.vercel.app` — camera works
-   because Vercel serves it over HTTPS.
+6. **Deploy.** Live at `https://<project>.vercel.app` — camera works because
+   Vercel serves it over HTTPS.
 
 > No `VITE_API_URL` needed: frontend and API share the same origin on Vercel.
 
