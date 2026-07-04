@@ -82,19 +82,29 @@ forwards it to the dev server; on Vercel it's the same-origin serverless functio
 5. Add **Environment Variables** (Settings → Environment Variables):
    - `GEMINI_API_KEY` = your Gemini key   *(required)*
    - `MODEL` = `gemini-2.5-flash`          *(required)*
-   - `GITHUB_TOKEN` = your GitHub Models token   *(optional — enables fallback)*
-   - `FALLBACK_MODEL` = `openai/gpt-4o-mini`     *(optional, this is the default)*
+   - `GEMINI_API_KEY2` = second Gemini key *(optional — chain step 2)*
+   - `MODEL2` = `gemini-2.5-flash`         *(optional)*
+   - `GITHUB_TOKEN` = GitHub Models token  *(optional — chain step 3)*
+   - `FALLBACK_MODEL` = `openai/gpt-4o-mini` *(optional)*
+   - `GITHUB_TOKEN2` = second GitHub token *(optional — chain step 4)*
+   - `FALLBACK_MODEL2` = `openai/gpt-4o-mini` *(optional)*
 6. **Deploy.** Live at `https://<project>.vercel.app` — camera works because
    Vercel serves it over HTTPS.
 
 > No `VITE_API_URL` needed: frontend and API share the same origin on Vercel.
 
-## Provider fallback chain
-`/api/solve` tries **Gemini** first. If Gemini returns a **rate-limit (429)** and a
-`GITHUB_TOKEN` is set, it automatically retries with **GitHub Models gpt-4o-mini**.
-The response includes `provider` (`"gemini"` or `"github"`) and `fallback: true`
-when the fallback was used. If both fail, you get one clear error. Without a
-`GITHUB_TOKEN`, only Gemini is used.
+## Provider fallback chain (up to 4 models)
+`/api/solve` tries these in order and moves to the next one whenever the current
+one fails (rate-limit, quota, timeout, etc.):
+
+1. Gemini — `GEMINI_API_KEY` + `MODEL`
+2. Gemini — `GEMINI_API_KEY2` + `MODEL2`
+3. GitHub Models — `GITHUB_TOKEN` + `FALLBACK_MODEL`
+4. GitHub Models — `GITHUB_TOKEN2` + `FALLBACK_MODEL2`
+
+Any slot with no key/token is skipped. The response includes `provider`
+(`"gemini"`/`"github"`), `model`, and `fallback: true` when a backup answered.
+Only after **all** configured providers fail do you get one combined error.
 
 ## How it works
 1. Start Exam → opens the rear camera.

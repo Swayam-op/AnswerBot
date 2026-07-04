@@ -14,9 +14,9 @@ import crypto from "node:crypto";
 // ---------------------------------------------------------------------------
 // Config (read from environment; set these in Vercel > Project > Settings > Env)
 // ---------------------------------------------------------------------------
-const GEMINI_MODEL = process.env.MODEL || "gemini-2.5-flash";
 const GITHUB_ENDPOINT = "https://models.github.ai/inference/chat/completions";
-const GITHUB_MODEL = process.env.FALLBACK_MODEL || "openai/gpt-4o-mini";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+const DEFAULT_GITHUB_MODEL = "openai/gpt-4o-mini";
 const REQUEST_TIMEOUT_MS = 45000;
 
 // Best-effort in-memory cache (persists only within a warm instance).
@@ -102,8 +102,8 @@ async function fetchWithTimeout(url, options) {
 // ---------------------------------------------------------------------------
 // Provider 1: Google Gemini
 // ---------------------------------------------------------------------------
-async function solveWithGemini({ base64, mimeType, apiKey }) {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+async function solveWithGemini({ base64, mimeType, apiKey, model }) {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const body = {
     systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
     contents: [
@@ -125,7 +125,7 @@ async function solveWithGemini({ base64, mimeType, apiKey }) {
     body: JSON.stringify(body),
   });
   const data = await apiRes.json().catch(() => ({}));
-  console.log(`[gemini] ${GEMINI_MODEL} -> ${apiRes.status} in ${Date.now() - startedAt} ms`);
+  console.log(`[gemini] ${model} -> ${apiRes.status} in ${Date.now() - startedAt} ms`);
 
   if (!apiRes.ok) {
     const msg = data?.error?.message || `HTTP ${apiRes.status}`;
@@ -147,16 +147,16 @@ async function solveWithGemini({ base64, mimeType, apiKey }) {
     );
   }
   const raw = (candidate.content?.parts || []).map((p) => p.text || "").join("").trim();
-  return buildResult(parseModelJson(raw), { provider: "gemini", model: GEMINI_MODEL, raw });
+  return buildResult(parseModelJson(raw), { provider: "gemini", model, raw });
 }
 
 // ---------------------------------------------------------------------------
 // Provider 2 (fallback): GitHub Models gpt-4o-mini
 // ---------------------------------------------------------------------------
-async function solveWithGithub({ base64, mimeType, token }) {
+async function solveWithGithub({ base64, mimeType, token, model }) {
   const dataUrl = `data:${mimeType};base64,${base64}`;
   const body = {
-    model: GITHUB_MODEL,
+    model,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       {
@@ -182,7 +182,7 @@ async function solveWithGithub({ base64, mimeType, token }) {
   } catch {
     /* GitHub 429 bodies are plain text */
   }
-  console.log(`[github] ${GITHUB_MODEL} -> ${apiRes.status} in ${Date.now() - startedAt} ms`);
+  console.log(`[github] ${model} -> ${apiRes.status} in ${Date.now() - startedAt} ms`);
 
   if (!apiRes.ok) {
     const msg = data?.error?.message || text || `HTTP ${apiRes.status}`;
@@ -198,7 +198,48 @@ async function solveWithGithub({ base64, mimeType, token }) {
   }
 
   const raw = data?.choices?.[0]?.message?.content ?? "";
-  return buildResult(parseModelJson(raw), { provider: "github", model: GITHUB_MODEL, raw });
+  return buildResult(parseModelJson(raw), { provider: "github", model, raw });
+}
+
+// ---------------------------------------------------------------------------
+// Build the ordered provider chain from environment variables:
+//   1) Gemini  (GEMINI_API_KEY  + MODEL)
+//   2) Gemini  (GEMINI_API_KEY2 + MODEL2)
+//   3) GitHub  (GITHUB_TOKEN    + FALLBACK_MODEL)
+//   4) GitHub  (GITHUB_TOKEN2   + FALLBACK_MODEL2)
+// Only entries whose key/token is present are included. Each is tried in order.
+// ---------------------------------------------------------------------------
+function buildProviderChain() {
+  const env = process.env;
+  const chain = [];
+
+  const geminiSlots = [
+    { key: env.GEMINI_API_KEY, model: env.MODEL },
+    { key: env.GEMINI_API_KEY2, model: env.MODEL2 },
+  ];
+  for (const slot of geminiSlots) {
+    if (!slot.key) continue;
+    const model = slot.model || DEFAULT_GEMINI_MODEL;
+    chain.push({
+      label: `gemini:${model}`,
+      run: (img) => solveWithGemini({ ...img, apiKey: slot.key, model }),
+    });
+  }
+
+  const githubSlots = [
+    { token: env.GITHUB_TOKEN, model: env.FALLBACK_MODEL },
+    { token: env.GITHUB_TOKEN2, model: env.FALLBACK_MODEL2 },
+  ];
+  for (const slot of githubSlots) {
+    if (!slot.token) continue;
+    const model = slot.model || DEFAULT_GITHUB_MODEL;
+    chain.push({
+      label: `github:${model}`,
+      run: (img) => solveWithGithub({ ...img, token: slot.token, model }),
+    });
+  }
+
+  return chain;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,12 +250,11 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed. Use POST." });
   }
 
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const githubToken = process.env.GITHUB_TOKEN; // optional fallback
-  if (!geminiKey) {
+  const chain = buildProviderChain();
+  if (chain.length === 0) {
     return res.status(500).json({
       error:
-        "Server is missing GEMINI_API_KEY. Set it in the backend .env (local) or Vercel env vars (production).",
+        "Server has no API keys configured. Set GEMINI_API_KEY (and optionally GEMINI_API_KEY2 / GITHUB_TOKEN / GITHUB_TOKEN2) in the environment.",
     });
   }
 
@@ -243,36 +283,34 @@ export default async function handler(req, res) {
       return res.json({ ...answerCache.get(cacheKey), cached: true });
     }
 
-    // 1) Try Gemini. 2) On rate-limit, fall back to GitHub gpt-4o-mini.
+    // Try each provider in order; advance to the next one on ANY failure.
     let result;
-    try {
-      result = await solveWithGemini({ base64, mimeType, apiKey: geminiKey });
-    } catch (err) {
-      const isRateLimit = err instanceof ProviderError && err.rateLimit;
-
-      if (isRateLimit && githubToken) {
-        console.warn("[fallback] Gemini rate-limited -> trying GitHub gpt-4o-mini");
-        try {
-          result = await solveWithGithub({ base64, mimeType, token: githubToken });
-          result.fallback = true;
-        } catch (err2) {
-          const msg2 = err2?.message || "Fallback failed.";
-          console.error("[fallback] GitHub also failed:", msg2);
-          return res.status(429).json({
-            error: `Both providers are unavailable. Gemini hit its rate limit and the GitHub gpt-4o-mini fallback failed: ${msg2}`,
-          });
-        }
-      } else if (err?.name === "AbortError") {
-        return res
-          .status(504)
-          .json({ error: "The model took too long to respond (timed out). Please rerun." });
-      } else {
-        const status = err instanceof ProviderError ? err.status : 502;
-        const message = isRateLimit
-          ? "Gemini rate limit reached (free tier). Set GITHUB_TOKEN to enable the gpt-4o-mini fallback, or wait and rerun."
-          : err?.message || "Model request failed.";
-        return res.status(status).json({ error: message });
+    let lastError;
+    const attempts = [];
+    for (let i = 0; i < chain.length; i++) {
+      const provider = chain[i];
+      try {
+        result = await provider.run({ base64, mimeType });
+        if (i > 0) result.fallback = true; // a backup provider answered
+        break;
+      } catch (err) {
+        lastError = err;
+        const reason = err?.message || "failed";
+        attempts.push(`${provider.label}: ${reason}`);
+        console.warn(
+          `[chain] ${provider.label} failed (${i + 1}/${chain.length}): ${reason}` +
+            (i + 1 < chain.length ? " — trying next" : "")
+        );
       }
+    }
+
+    if (!result) {
+      // Every provider in the chain failed.
+      const status = lastError instanceof ProviderError ? lastError.status : 502;
+      console.error("[chain] all providers failed:", attempts.join(" | "));
+      return res.status(status).json({
+        error: `All ${chain.length} model(s) failed. ${attempts.join(" | ")}`,
+      });
     }
 
     // Cache good answers (evict oldest if full).
