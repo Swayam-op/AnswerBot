@@ -3,7 +3,7 @@ import "./style.css";
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const WAIT_SECONDS = 20; // gap between one answer and the next capture
+const WAIT_SECONDS = 10; // gap between one answer and the next capture
 
 // API base:
 // - Localhost/phone-on-LAN (now): leave VITE_API_URL unset -> uses "/api/solve",
