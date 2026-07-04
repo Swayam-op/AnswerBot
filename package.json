@@ -1,0 +1,10 @@
+{
+  "name": "answer-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Answer Bot — Vite frontend + Gemini vision serverless API (Vercel-ready)",
+  "engines": {
+    "node": "22.x"
+  }
+}

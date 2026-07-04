@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#0f9d58" />
+    <title>Answer Bot</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="app-header">
+        <h1>🟢 Answer Bot</h1>
+        <span id="status-pill" class="pill pill-idle">Idle</span>
+      </header>
+
+      <main class="layout">
+        <!-- LEFT: camera + capture -->
+        <section class="panel camera-panel">
+          <div class="video-wrap">
+            <video id="video" playsinline muted autoplay></video>
+            <div id="scan-overlay" class="scan-overlay hidden"></div>
+          </div>
+
+          <div id="phase" class="phase-box">Press <b>Start Exam</b> to begin.</div>
+
+          <div class="controls">
+            <button id="start-btn" class="btn btn-primary">▶ Start Exam</button>
+            <button id="stop-btn" class="btn btn-danger" disabled>■ Stop</button>
+          </div>
+
+          <div class="captured-block">
+            <p class="label">Last captured image (sent to server):</p>
+            <img id="captured-img" class="captured-img" alt="No capture yet" />
+          </div>
+        </section>
+
+        <!-- RIGHT: answer queue -->
+        <section class="panel queue-panel">
+          <div class="queue-header">
+            <h2>Answer Queue</h2>
+            <span id="queue-count" class="count-badge">0</span>
+          </div>
+          <ul id="queue" class="queue-list">
+            <li class="queue-empty">No answers yet. Answers will appear here.</li>
+          </ul>
+        </section>
+      </main>
+
+      <!-- Error modal -->
+      <div id="error-modal" class="modal-backdrop hidden">
+        <div class="modal">
+          <h3>⚠️ Request failed</h3>
+          <p id="error-text" class="error-text"></p>
+          <div class="modal-actions">
+            <button id="retry-btn" class="btn btn-primary">↻ Rerun</button>
+            <button id="cancel-btn" class="btn btn-danger">✖ Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- hidden canvas used to grab a frame -->
+      <canvas id="canvas" class="hidden"></canvas>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

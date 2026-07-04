@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# secrets — NEVER commit
+.env
+**/.env
+!**/.env.example
+
+# build output
+frontend/dist/
+dist/
+
+# vercel
+.vercel
+
+# logs / os
+*.log
+.DS_Store
+Thumbs.db
+
+# local tooling config
+.claude/
